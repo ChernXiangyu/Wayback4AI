@@ -1,3 +1,4 @@
+import re
 import requests
 from joblib import Parallel, delayed
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -66,10 +67,55 @@ def build_archive_url(timestamp, target_url):
     
     Returns:
         Constructed archive URL string
+    
+    Note:
+        The `id_` parameter in the URL is important for faster downloads. When `id_` is included,
+        Internet Archive returns simplified web pages without the Wayback Machine's wrapper interface,
+        which significantly speeds up download times and reduces bandwidth usage.
     """
-    # Build special URL with id_ to get original HTML
+    # Build special URL with id_ to get original HTML (simplified by Internet Archive for faster downloads)
     archive_url = f"https://web.archive.org/web/{timestamp}id_/{target_url}"
     return archive_url
+
+
+def convert_to_id_url(wayback_url):
+    """
+    Convert a standard Wayback Machine URL to use the `id_` parameter for faster downloads.
+    
+    This function extracts the timestamp and target URL from any Wayback URL format
+    (e.g., standard format, if_ format, js_ format) and converts it to the `id_` format
+    which provides simplified pages for faster downloads.
+    
+    Args:
+        wayback_url: Wayback Machine URL in any format, e.g.:
+            - "https://web.archive.org/web/20260101020758/https://a16z.com/"
+            - "https://web.archive.org/web/20260101020758if_/https://a16z.com/"
+            - "https://web.archive.org/web/20260101020758id_/https://a16z.com/"
+    
+    Returns:
+        Wayback URL with `id_` parameter for faster downloads
+    
+    Example:
+        >>> convert_to_id_url("https://web.archive.org/web/20260101020758/https://a16z.com/")
+        'https://web.archive.org/web/20260101020758id_/https://a16z.com/'
+    
+    Note:
+        The `id_` parameter speeds up downloads because Internet Archive returns simplified
+        web pages without the Wayback Machine's wrapper interface, reducing bandwidth usage.
+    """
+    # Pattern to match Wayback URLs: https://web.archive.org/web/{timestamp}[mode_]/{target_url}
+    # mode_ can be empty, id_, if_, js_, etc.
+    pattern = r'https://web\.archive\.org/web/(\d{14})([a-z_]*)/(.+)'
+    
+    match = re.match(pattern, wayback_url)
+    if not match:
+        raise ValueError(f"Invalid Wayback URL format: {wayback_url}")
+    
+    timestamp = match.group(1)
+    target_url = match.group(3)
+    
+    # Build URL with id_ parameter
+    return f"https://web.archive.org/web/{timestamp}id_/{target_url}"
 
 
 @retry(
