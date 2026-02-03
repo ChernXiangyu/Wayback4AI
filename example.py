@@ -7,9 +7,11 @@ This file demonstrates how to use the wayback4ai library to:
 """
 
 import json
+import os
+from pathlib import Path
+from urllib.parse import urlparse
 from wayback4ai.wayback import get_wayback_metadata
-from wayback4ai.downloader import download_url, build_archive_url
-
+from wayback4ai.downloader import download_url, build_archive_url, parallel_download_urls, convert_to_id_url
 
 def example_get_wayback_metadata():
     """Example: Get Wayback Machine metadata for a16z.com"""
@@ -106,10 +108,111 @@ def example_download_archive():
         traceback.print_exc()
 
 
+def example_parallel_download_multiple_years():
+    """Example: Parallel download archived content from multiple years and save to disk"""
+    print("\n" + "=" * 70)
+    print("Wayback4AI - Example: Parallel download multiple years and save to disk")
+    print("=" * 70)
+    
+    target_url = "https://a16z.com/"
+    output_dir = "downloaded_archives"
+    
+    try:
+        # Get metadata with yearly snapshots (one per year)
+        print(f"\nFetching metadata for: {target_url}")
+        metadata = get_wayback_metadata(target_url, collapse="timestamp:4")
+        
+        print(f"Found {metadata['snapshots_count']} snapshots across multiple years")
+        
+        if metadata['snapshots_count'] == 0:
+            print("No snapshots found!")
+            return
+        
+        # Convert Wayback URLs to id_ format for faster downloads
+        print("\nConverting URLs to id_ format for faster downloads...")
+        id_urls = []
+        snapshots_info = []
+        
+        for snapshot in metadata['snapshots']:
+            wayback_url = snapshot['wayback_url']
+            id_url = convert_to_id_url(wayback_url)
+            id_urls.append(id_url)
+            snapshots_info.append({
+                'id_url': id_url,
+                'timestamp': snapshot['timestamp'],
+                'year': snapshot['year'],
+                'date': snapshot['date'],
+                'original_url': snapshot['original_url']
+            })
+        
+        print(f"Prepared {len(id_urls)} URLs for parallel download")
+        
+        # Create output directory
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        print(f"\nOutput directory: {output_path.absolute()}")
+        
+        # Parallel download all URLs
+        print("\nStarting parallel downloads...")
+        responses = parallel_download_urls(id_urls, n_jobs=2)
+        
+        # Save each response to disk
+        print("\nSaving files to disk...")
+        saved_files = []
+        
+        for i, response in enumerate(responses):
+            snapshot_info = snapshots_info[i]
+            
+            # Generate filename from URL and timestamp
+            parsed_url = urlparse(snapshot_info['original_url'])
+            domain = parsed_url.netloc.replace(':', '_').replace('.', '_')
+            filename = f"{domain}_{snapshot_info['year']}_{snapshot_info['timestamp']}.html"
+            filepath = output_path / filename
+            
+            # Save content to file
+            with open(filepath, 'wb') as f:
+                f.write(response.content)
+            
+            saved_files.append({
+                'filepath': str(filepath),
+                'year': snapshot_info['year'],
+                'timestamp': snapshot_info['timestamp'],
+                'size': len(response.content),
+                'status_code': response.status_code
+            })
+            
+            print(f"  [{snapshot_info['year']}] Saved: {filename} ({len(response.content)} bytes)")
+        
+        # Print summary
+        print("\n" + "-" * 70)
+        print("Download Summary:")
+        print("-" * 70)
+        total_size = sum(f['size'] for f in saved_files)
+        print(f"Total files downloaded: {len(saved_files)}")
+        print(f"Total size: {total_size:,} bytes ({total_size / 1024 / 1024:.2f} MB)")
+        print(f"Output directory: {output_path.absolute()}")
+        
+        # Save metadata JSON
+        metadata_file = output_path / "download_metadata.json"
+        with open(metadata_file, 'w', encoding='utf-8') as f:
+            json.dump({
+                'target_url': target_url,
+                'download_info': saved_files,
+                'snapshots_metadata': metadata['snapshots']
+            }, f, indent=2, ensure_ascii=False)
+        print(f"\nMetadata saved to: {metadata_file}")
+        
+    except Exception as e:
+        print(f"\nError: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def main():
     """Run all examples"""
-    example_get_wayback_metadata()
-    example_download_archive()
+    # example_get_wayback_metadata()
+    # example_download_archive()
+    example_parallel_download_multiple_years()
 
 
 if __name__ == "__main__":

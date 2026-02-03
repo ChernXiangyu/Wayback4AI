@@ -3,6 +3,12 @@ import requests
 from joblib import Parallel, delayed
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    # Fallback if tqdm is not installed
+    tqdm = None
+
 # Global variables
 HEADERS = {
     "User-Agent": "Archive4AI Bot/1.0",
@@ -144,7 +150,7 @@ def download_url_with_retry(url, headers=None, allow_redirects=True, stream=True
     return download_url(url, headers=headers, allow_redirects=allow_redirects, stream=stream, timeout=timeout)
 
 
-def parallel_download_urls(urls, n_jobs=DEFAULT_N_JOBS, headers=None, allow_redirects=True, stream=True, timeout=DEFAULT_TIMEOUT, backend=DEFAULT_BACKEND):
+def parallel_download_urls(urls, n_jobs=DEFAULT_N_JOBS, headers=None, allow_redirects=True, stream=True, timeout=DEFAULT_TIMEOUT, backend=DEFAULT_BACKEND, show_progress_bar=False):
     """
     Download multiple URLs in parallel using joblib with exponential backoff retry.
     
@@ -156,22 +162,55 @@ def parallel_download_urls(urls, n_jobs=DEFAULT_N_JOBS, headers=None, allow_redi
         stream: Whether to use streaming download, default True (suitable for large files)
         timeout: Timeout in seconds, default DEFAULT_TIMEOUT
         backend: Joblib backend ('threading' or 'loky'), default DEFAULT_BACKEND
+        show_progress_bar: Whether to show a progress bar using tqdm, default False
     
     Returns:
         List of requests.Response objects in the same order as input URLs
     
     Raises:
         requests.exceptions.RequestException: Raises exception if any download fails after retries
+    
+    Note:
+        Progress bar requires tqdm to be installed. If tqdm is not available and
+        show_progress_bar=True, the function will work without displaying a progress bar.
     """
-    results = Parallel(n_jobs=n_jobs, backend=backend)(
-        delayed(download_url_with_retry)(
-            url,
-            headers=headers,
-            allow_redirects=allow_redirects,
-            stream=stream,
-            timeout=timeout
+    if show_progress_bar and tqdm is not None:
+        # Create progress bar
+        pbar = tqdm(total=len(urls), desc="Downloading", unit="URL")
+        
+        # Wrapper function to update progress bar after each download
+        def download_with_progress(url):
+            try:
+                result = download_url_with_retry(
+                    url,
+                    headers=headers,
+                    allow_redirects=allow_redirects,
+                    stream=stream,
+                    timeout=timeout
+                )
+                pbar.update(1)
+                return result
+            except Exception as e:
+                pbar.update(1)
+                raise
+        
+        try:
+            results = Parallel(n_jobs=n_jobs, backend=backend)(
+                delayed(download_with_progress)(url)
+                for url in urls
+            )
+        finally:
+            pbar.close()
+    else:
+        results = Parallel(n_jobs=n_jobs, backend=backend)(
+            delayed(download_url_with_retry)(
+                url,
+                headers=headers,
+                allow_redirects=allow_redirects,
+                stream=stream,
+                timeout=timeout
+            )
+            for url in urls
         )
-        for url in urls
-    )
     return results
 

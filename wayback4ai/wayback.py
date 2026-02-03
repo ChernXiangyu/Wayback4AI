@@ -4,13 +4,21 @@ Wayback Machine CDX API client for collecting archived URLs.
 This module provides a simple interface for collecting Wayback Machine URLs.
 """
 
+import requests
 from typing import Optional, Dict, Any
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 try:
     from .cdx import search, CDXError, CDXRecord
 except ImportError:
     # When running as a script directly
     from cdx import search, CDXError, CDXRecord
+
+# Retry configuration (same as downloader.py)
+DEFAULT_RETRY_ATTEMPTS = 3
+DEFAULT_RETRY_MULTIPLIER = 2
+DEFAULT_RETRY_MIN_WAIT = 10
+DEFAULT_RETRY_MAX_WAIT = 60
 
 
 def _normalize_url(url: str) -> str:
@@ -42,6 +50,11 @@ def _record_to_dict(record: CDXRecord, normalized_url: str) -> Dict[str, Any]:
     }
 
 
+@retry(
+    stop=stop_after_attempt(DEFAULT_RETRY_ATTEMPTS),
+    wait=wait_exponential(multiplier=DEFAULT_RETRY_MULTIPLIER, min=DEFAULT_RETRY_MIN_WAIT, max=DEFAULT_RETRY_MAX_WAIT),
+    retry=retry_if_exception_type((CDXError, requests.exceptions.RequestException))
+)
 def get_wayback_metadata(
     url: str,
     from_date: Optional[str] = None,
@@ -50,6 +63,10 @@ def get_wayback_metadata(
 ) -> Dict[str, Any]:
     """
     Get Wayback Machine snapshot metadata for a URL and return as a dictionary.
+    
+    This function includes automatic retry logic with exponential backoff for handling
+    transient network errors and CDX API failures, matching the retry behavior of
+    the downloader module.
     
     Args:
         url: The URL to search for in Wayback Machine
@@ -68,6 +85,10 @@ def get_wayback_metadata(
             - latest: Dictionary of the latest snapshot (or None)
             - oldest: Dictionary of the oldest snapshot (or None)
     
+    Raises:
+        CDXError: If CDX API error occurs after retries
+        requests.exceptions.RequestException: If network error occurs after retries
+    
     Example:
         >>> metadata = get_wayback_metadata("https://a16z.com/")
         >>> print(f"Found {metadata['snapshots_count']} snapshots")
@@ -79,15 +100,14 @@ def get_wayback_metadata(
     # Convert collapse string to list format expected by CDX API
     collapse_list = [collapse] if collapse else None
     
-    try:
-        response = search(
-            url=normalized_url,
-            from_date=from_date,
-            to_date=to_date,
-            collapse=collapse_list,
-        )
-    except CDXError as e:
-        raise Exception(f"CDX API error for URL {normalized_url}: {e}")
+    # search() may raise CDXError or requests.exceptions.RequestException
+    # The retry decorator will handle retries automatically
+    response = search(
+        url=normalized_url,
+        from_date=from_date,
+        to_date=to_date,
+        collapse=collapse_list,
+    )
     
     # Convert CDX records to dictionaries
     snapshots = [
