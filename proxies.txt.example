@@ -1,0 +1,8 @@
+# Proxy format: host:port:username:password (one per line)
+# Empty lines and lines starting with # are ignored.
+#
+# Example (replace with your own proxy credentials):
+proxy.example.com:8080:your_username:your_password
+1.2.3.4:3128:user123:pass456
+#
+# For Webshare, Bright Data, etc., paste your proxy list below.

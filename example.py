@@ -7,11 +7,20 @@ This file demonstrates how to use the wayback4ai library to:
 """
 
 import json
+
+# Proxy file for downloads. Default "proxies.txt" for round-robin proxies.
+# Set to None to disable proxies (required if no proxy file exists).
+PROXIES_FILE = "proxies.txt"
+# How many proxies to use from the file. None = use all. 0 = no proxy.
+N_PROXIES = None
+# Number of parallel download workers.
+N_PARALLEL = 2
+
 import os
 from pathlib import Path
 from urllib.parse import urlparse
 from wayback4ai.wayback import get_wayback_metadata
-from wayback4ai.downloader import download_url, build_archive_url, parallel_download_urls, convert_to_id_url
+from wayback4ai.downloader import download_url, build_archive_url, parallel_download_urls, convert_to_id_url, load_proxies
 
 def example_get_wayback_metadata():
     """Example: Get Wayback Machine metadata for a16z.com"""
@@ -153,14 +162,33 @@ def example_parallel_download_multiple_years():
         print(f"\nOutput directory: {output_path.absolute()}")
         
         # Parallel download all URLs
+        proxies = None
+        if PROXIES_FILE:
+            path = Path(PROXIES_FILE)
+            if not path.exists():
+                print("\nError: Proxy file not found:", path.absolute())
+                print("  Set PROXIES_FILE = None in example.py to disable proxies.")
+                return
+            loaded = load_proxies(PROXIES_FILE)
+            if not loaded:
+                print("\nError: No valid proxies in", path.absolute())
+                print("  Add proxy lines (format: host:port:username:password) or set PROXIES_FILE = None to disable.")
+                return
+            if N_PROXIES is not None:
+                proxies = loaded[:N_PROXIES] if N_PROXIES > 0 else None
+            else:
+                proxies = loaded
         print("\nStarting parallel downloads...")
-        responses = parallel_download_urls(id_urls, n_jobs=2)
+        responses = parallel_download_urls(id_urls, n_jobs=N_PARALLEL, proxies=proxies)
         
         # Save each response to disk
         print("\nSaving files to disk...")
         saved_files = []
         
         for i, response in enumerate(responses):
+            if response is None:
+                print(f"  [{snapshots_info[i]['year']}] Skipped (failed after max retries)")
+                continue
             snapshot_info = snapshots_info[i]
             
             # Generate filename from URL and timestamp

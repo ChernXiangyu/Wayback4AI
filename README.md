@@ -93,6 +93,24 @@ for response in responses:
     print(f"Downloaded {len(response.text)} bytes")
 ```
 
+### Proxy Support
+
+Load proxies from a file (format: `host:port:username:password` per line) for round-robin use:
+
+```python
+from wayback4ai.downloader import download_url, parallel_download_urls, load_proxies
+
+# Single download with first proxy from file
+response = download_url("https://web.archive.org/...", proxy="proxies.txt")
+
+# Parallel downloads with round-robin proxy rotation
+responses = parallel_download_urls(urls, proxies="proxies.txt")
+
+# Or use a list of proxy strings
+proxies = load_proxies("proxies.txt")
+responses = parallel_download_urls(urls, proxies=proxies)
+```
+
 ### Advanced CDX API Usage
 
 For advanced CDX API features, see the [CDX API documentation](wayback4ai/cdx/README.md).
