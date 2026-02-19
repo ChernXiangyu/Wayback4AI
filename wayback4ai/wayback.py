@@ -14,10 +14,10 @@ except ImportError:
     # When running as a script directly
     from cdx import search, CDXError, CDXRecord
 
-# Retry configuration (same as downloader.py)
-DEFAULT_RETRY_ATTEMPTS = 3
+# Retry configuration (exponential backoff for transient CDX API / network errors)
+DEFAULT_RETRY_ATTEMPTS = 6
 DEFAULT_RETRY_MULTIPLIER = 2
-DEFAULT_RETRY_MIN_WAIT = 10
+DEFAULT_RETRY_MIN_WAIT = 3
 DEFAULT_RETRY_MAX_WAIT = 60
 
 
